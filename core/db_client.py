@@ -5,13 +5,17 @@ from qdrant_client.http import models
 class QdrantService:
     def __init__(
         self,
-        host: str,
+        host: str | None = None,
         port: int = 6333,
         api_key: str | None = None,
         collection_name: str = "aic2026_clip_v1",
         https: bool = False,
+        url: str | None = None,
     ):
-        self.client = QdrantClient(host=host, port=port, api_key=api_key, https=https)
+        if url:
+            self.client = QdrantClient(url=url, api_key=api_key)
+        else:
+            self.client = QdrantClient(host=host, port=port, api_key=api_key, https=https)
         self.collection_name = collection_name
 
     def query_by_vector(

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import requests
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -146,18 +146,23 @@ class Task2QAService:
                     f"Mô tả bối cảnh khung hình video: {desc_context}\n{prompt}"
                 ]
 
-            response = self.ai_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=contents,
-                config=types.GenerateContentConfig(temperature=0.0),
-            )
+            try:
+                response = self.ai_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=contents,
+                    config=types.GenerateContentConfig(temperature=0.0),
+                )
+                answer_text = response.text.strip() if response and response.text else "Không có câu trả lời."
+            except (errors.APIError, Exception) as exc:  # noqa: BLE001
+                logger.warning("Gemini API call failed for frame %s: %s", cand.get("frame_id"), exc)
+                answer_text = "Không thể lấy câu trả lời từ Gemini API."
 
             results.append(
                 {
                     "video_id": cand["video_id"],
                     "frame_id": cand["frame_id"],
                     "search_description": search_description,
-                    "answer": response.text.strip(),
+                    "answer": answer_text,
                 }
             )
 

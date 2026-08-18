@@ -8,12 +8,14 @@ from modules.task2_qa import Task2QAService
 from modules.task3_trake import Task3TRAKEService
 
 # 1. Khởi tạo kết nối DB Qdrant
+DB_URL = get_env("QDRANT_URL")
 DB_HOST = get_env("QDRANT_HOST", "localhost")
 DB_PORT = int(get_env("QDRANT_PORT", "6333"))
 DB_API_KEY = get_env("QDRANT_API_KEY")
 DB_COLLECTION = get_env("QDRANT_COLLECTION", "aic2026_clip_v1")
 
 db_service = QdrantService(
+    url=DB_URL,
     host=DB_HOST,
     port=DB_PORT,
     api_key=DB_API_KEY,
@@ -46,32 +48,32 @@ if __name__ == "__main__":
     print("\n==========================================")
     print("=== Dạng 1: Textual KIS ===")
     print("==========================================")
-    res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=2)
+    res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=100)
     print(json.dumps(res_task1, indent=2, ensure_ascii=False))
 
-    # --- Kiểm thử Task 2: Q&A ---
-    print("\n==========================================")
-    print("=== Dạng 2: Hỏi - Đáp (Q&A) ===")
-    print("==========================================")
-    if task2:
-        res_task2 = task2.answer_question(
-            question="Chiếc laptop có logo gì?",
-        )
-        print(json.dumps(res_task2, indent=2, ensure_ascii=False))
-    else:
-        print("[LƯU Ý] Chưa điền GEMINI_API_KEY trong .env. Hãy điền key để chạy Task 2 VLM.")
+    # # --- Kiểm thử Task 2: Q&A ---
+    # print("\n==========================================")
+    # print("=== Dạng 2: Hỏi - Đáp (Q&A) ===")
+    # print("==========================================")
+    # if task2:
+    #     res_task2 = task2.answer_question(
+    #         question="Chiếc laptop có logo gì?",
+    #     )
+    #     print(json.dumps(res_task2, indent=2, ensure_ascii=False))
+    # else:
+    #     print("[LƯU Ý] Chưa điền GEMINI_API_KEY trong .env. Hãy điền key để chạy Task 2 VLM.")
 
-    # --- Kiểm thử Task 3: TRAKE ---
-    print("\n==========================================")
-    print("=== Dạng 3: TRAKE (Temporal Retrieval & Alignment) ===")
-    print("==========================================")
-    events_query = [
-        "Vận động viên bắt đầu chạy đà",
-        "Vận động viên giậm nhảy rời khỏi mặt đất",
-        "Vận động viên bay qua xà ngang",
-        "Vận động viên tiếp đất lên đệm",
-    ]
-    res_task3 = task3.align_events(events_query)
-    print(json.dumps(res_task3, indent=2, ensure_ascii=False))
+    # # --- Kiểm thử Task 3: TRAKE ---
+    # print("\n==========================================")
+    # print("=== Dạng 3: TRAKE (Temporal Retrieval & Alignment) ===")
+    # print("==========================================")
+    # events_query = [
+    #     "Vận động viên bắt đầu chạy đà",
+    #     "Vận động viên giậm nhảy rời khỏi mặt đất",
+    #     "Vận động viên bay qua xà ngang",
+    #     "Vận động viên tiếp đất lên đệm",
+    # ]
+    # res_task3 = task3.align_events(events_query)
+    # print(json.dumps(res_task3, indent=2, ensure_ascii=False))
 
 
