@@ -1,0 +1,9 @@
+Pillow==12.3.0
+protobuf==7.35.1
+qdrant_client==1.19.0
+Requests==2.34.2
+torch==2.13.0
+transformers==5.15.0
+pillow
+google-genai
+python-dotenv
