@@ -1,11 +1,11 @@
 import json
+
 from config import get_env
 from core.db_client import QdrantService
 from core.text_encoder import SigLIPEncoder
 from modules.task1_kis import Task1KISService
 from modules.task2_qa import Task2QAService
 from modules.task3_trake import Task3TRAKEService
-
 
 # 1. Khởi tạo kết nối DB Qdrant
 DB_HOST = get_env("QDRANT_HOST", "localhost")

@@ -7,7 +7,7 @@ class QdrantService:
         self,
         host: str,
         port: int = 6333,
-        api_key: str = None,
+        api_key: str | None = None,
         collection_name: str = "aic2026_clip_v1",
         https: bool = False,
     ):
@@ -15,7 +15,7 @@ class QdrantService:
         self.collection_name = collection_name
 
     def query_by_vector(
-        self, vector: list[float], object_filter: list[str] = None, top_k: int = 5
+        self, vector: list[float], object_filter: list[str] | None = None, top_k: int = 5
     ) -> list[dict]:
         """Chỉ làm nhiệm vụ nhận vector và trả về kết quả từ DB"""
         query_filter = None

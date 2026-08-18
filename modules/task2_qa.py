@@ -1,17 +1,21 @@
+import logging
 import os
-import requests
 from io import BytesIO
 from pathlib import Path
-from PIL import Image
+
+import requests
 from google import genai
 from google.genai import types
+from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 class Task2QAService:
     def __init__(
         self,
         task1_service,
-        gemini_api_key: str = None,
+        gemini_api_key: str | None = None,
         videos_dir: str = "videos",
     ):
         self.task1 = task1_service
@@ -99,13 +103,13 @@ class Task2QAService:
                 res = requests.get(hit_item["frame_url"], timeout=10)
                 if res.status_code == 200:
                     return Image.open(BytesIO(res.content))
-            except Exception:
-                pass
+            except (requests.RequestException, OSError) as exc:
+                logger.warning("Failed to fetch or open image from URL: %s", exc)
 
         return None
 
     def answer_question(
-        self, description: str = None, question: str = None, top_k: int = 1
+        self, description: str | None = None, question: str | None = None, top_k: int = 1
     ) -> list[dict]:
         if not question and description:
             # Trường hợp người dùng truyền 1 tham số duy nhất là câu hỏi vào vị trí description
@@ -139,8 +143,7 @@ class Task2QAService:
             else:
                 desc_context = cand.get("desc", "")
                 contents = [
-                    f"Mô tả bối cảnh khung hình video: {desc_context}\n"
-                    f"{prompt}"
+                    f"Mô tả bối cảnh khung hình video: {desc_context}\n{prompt}"
                 ]
 
             response = self.ai_client.models.generate_content(

@@ -5,7 +5,7 @@ class Task1KISService:
         self.encoder = text_encoder
 
     def find_event(
-        self, query_description: str, object_filter: list[str] = None, top_k: int = 5
+        self, query_description: str, object_filter: list[str] | None = None, top_k: int = 5
     ) -> list[dict]:
         # Bước 1: Biến mô tả thành vector
         query_vector = self.encoder.encode(query_description)

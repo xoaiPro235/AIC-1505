@@ -4,7 +4,7 @@ from transformers import AutoModel, AutoProcessor
 
 class SigLIPEncoder:
     def __init__(
-        self, model_name: str = "google/siglip2-so400m-patch14-384", device: str = None
+        self, model_name: str = "google/siglip2-so400m-patch14-384", device: str | None = None
     ):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.processor = AutoProcessor.from_pretrained(model_name)
