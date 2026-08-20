@@ -140,4 +140,6 @@ class Task2QAService:
                 }
             )
 
-        return results
+    def answer_question(self, question: str, top_k: int = 1) -> list[dict]:
+        """Alias cho qa_search để tương thích với các script cũ"""
+        return self.qa_search(question=question, top_k=top_k)

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from config import get_env
 from core.db_client import QdrantService
@@ -6,6 +7,13 @@ from core.text_encoder import SigLIPEncoder
 from modules.task1_kis import Task1KISService
 from modules.task2_qa import Task2QAService
 from modules.task3_trake import Task3TRAKEService
+from utils.formatter import (
+    create_submission_zip,
+    export_kis_csv,
+    export_qa_csv,
+    export_trake_csv,
+    validate_submission,
+)
 
 # 1. Khởi tạo kết nối DB Qdrant
 DB_URL = get_env("QDRANT_URL")
@@ -43,36 +51,55 @@ else:
 # 5. Tạo instance cho Task 3 (TRAKE)
 task3 = Task3TRAKEService(task1_service=task1)
 
+
 if __name__ == "__main__":
-    # # --- Kiểm thử Task 1: Textual KIS ---
-    # print("\n==========================================")
-    # print("=== Dạng 1: Textual KIS ===")
-    # print("==========================================")
-    # res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=10)
-    # print(json.dumps(res_task1, indent=2, ensure_ascii=False))
+    # Thư mục chứa các file submission nộp BTC
+    sub_dir = Path("submission")
+    sub_dir.mkdir(exist_ok=True)
 
-    # --- Kiểm thử Task 2: Q&A ---
-    print("\n==========================================")
-    print("=== Dạng 2: Hỏi - Đáp (Q&A) ===")
-    print("==========================================")
+    print("\n" + "=" * 50)
+    print("      AIC 2026 - CHẠY THỬ NGHIỆM 3 DẠNG BÀI THI")
+    print("=" * 50)
+
+    # --- Dạng 1: Textual KIS ---
+    print("\n[1] Đang chạy Task 1: Textual KIS...")
+    query_kis = "Một người đang mở laptop trong văn phòng"
+    res_task1 = task1.find_event(query_kis, top_k=100)
+    # Tự động xuất CSV (tự cộng +1 offset frame theo chuẩn BTC)
+    export_kis_csv(res_task1, sub_dir / "query-1-kis.csv", max_rows=100)
+    print(f"-> Đã tìm thấy {len(res_task1)} kết quả và xuất vào {sub_dir}/query-1-kis.csv")
+
+    # --- Dạng 2: Hỏi - Đáp (Q&A) ---
+    print("\n[2] Đang chạy Task 2: Hỏi - Đáp (Q&A)...")
     if task2:
-        res_task2 = task2.qa_search(
-            question="Một người đang dùng laptop trong văn phòng, laptop đó có màu gì?",
-            top_k=3,
-        )
-        print(json.dumps(res_task2, indent=2, ensure_ascii=False))
+        query_qa = "Một người đang dùng laptop trong văn phòng, laptop đó có màu gì?"
+        res_task2 = task2.qa_search(question=query_qa, top_k=20)
+        export_qa_csv(res_task2, sub_dir / "query-2-qa.csv", max_rows=100)
+        print(f"-> Đã trả lời {len(res_task2)} kết quả và xuất vào {sub_dir}/query-2-qa.csv")
     else:
-        print("[LƯU Ý] Chưa điền GEMINI_API_KEY trong .env. Hãy điền key để chạy Task 2 VLM.")
+        print("-> [BỎ QUA] Chưa cấu hình GEMINI_API_KEY trong .env")
 
-    # --- Kiểm thử Task 3: TRAKE ---
-    print("\n==========================================")
-    print("=== Dạng 3: TRAKE (Temporal Retrieval & Alignment) ===")
-    print("==========================================")
+    # --- Dạng 3: TRAKE (Temporal Retrieval & Alignment) ---
+    print("\n[3] Đang chạy Task 3: TRAKE...")
     events_query = [
         "Vận động viên bắt đầu chạy đà",
         "Vận động viên giậm nhảy rời khỏi mặt đất",
         "Vận động viên bay qua xà ngang",
         "Vận động viên tiếp đất lên đệm",
     ]
-    res_task3 = task3.align_events(events_query, top_k_results=3)
-    print(json.dumps(res_task3, indent=2, ensure_ascii=False))
+    res_task3 = task3.align_events(events_query, top_k_results=10)
+    export_trake_csv(
+        res_task3,
+        sub_dir / "query-3-trake.csv",
+        expected_events_count=len(events_query),
+        max_rows=100,
+    )
+    print(f"-> Đã căn chỉnh {len(res_task3)} video và xuất vào {sub_dir}/query-3-trake.csv")
+
+    # --- Kiểm tra Checklist & Đóng gói ZIP ---
+    print("\n" + "=" * 50)
+    print("      KIỂM TRA & ĐÓNG GÓI SUBMISSION (.ZIP)")
+    print("=" * 50)
+    validate_submission(sub_dir)
+    zip_file = create_submission_zip(sub_dir, "submission.zip")
+    print(f"-> ĐÃ TẠO FILE NỘP BÀI THÀNH CÔNG: {zip_file.resolve()}\n")
