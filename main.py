@@ -1,4 +1,5 @@
 import json
+import os
 
 from config import get_env
 from core.db_client import QdrantService
@@ -10,9 +11,14 @@ from modules.task3_trake import Task3TRAKEService
 # 1. Khởi tạo kết nối DB Qdrant
 DB_URL = get_env("QDRANT_URL")
 DB_HOST = get_env("QDRANT_HOST", "localhost")
-DB_PORT = int(get_env("QDRANT_PORT", "6333"))
+DB_PORT = int(get_env("QDRANT_PORT", "6333") or "6333")
 DB_API_KEY = get_env("QDRANT_API_KEY")
 DB_COLLECTION = get_env("QDRANT_COLLECTION", "aic2026_clip_v1")
+
+
+if not DB_COLLECTION:
+    raise RuntimeError("Thiếu biến môi trường DB_COLLECTION")
+
 
 db_service = QdrantService(
     url=DB_URL,
@@ -48,7 +54,7 @@ if __name__ == "__main__":
     print("\n==========================================")
     print("=== Dạng 1: Textual KIS ===")
     print("==========================================")
-    res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=100)
+    res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=10)
     print(json.dumps(res_task1, indent=2, ensure_ascii=False))
 
     # # --- Kiểm thử Task 2: Q&A ---

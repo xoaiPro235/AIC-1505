@@ -30,7 +30,7 @@ class QdrantService:
                 )
                 for obj in object_filter
             ]
-            query_filter = models.Filter(must=conditions)
+            query_filter = models.Filter(must=conditions) # type: ignore
 
         if hasattr(self.client, "query_points"):
             response = self.client.query_points(
@@ -48,7 +48,7 @@ class QdrantService:
                 query_filter=query_filter,
                 limit=top_k,
                 with_payload=True,
-            )
+            )  # type: ignore[attr-defined]
 
         results = []
         for hit in hits:

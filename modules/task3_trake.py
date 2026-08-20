@@ -1,123 +1,120 @@
-from modules.task1_kis import Task1KISService
+import logging
+from collections import defaultdict
 
+logger = logging.getLogger(__name__)
 
 class Task3TRAKEService:
-    """
-    Truy vấn dạng 3: Truy xuất và căn chỉnh sự kiện video theo thời gian (TRAKE)
-    Giai đoạn 1 (Retrieval): Tìm 1 video khớp nhất chứa toàn bộ chuỗi sự kiện.
-    Giai đoạn 2 (Alignment): Xác định chính xác 1 semantic keyframe cho mỗi sự kiện theo thứ tự thời gian.
-    """
-
-    def __init__(self, task1_service: Task1KISService):
+    def __init__(self, task1_service):
         self.task1 = task1_service
 
-    def align_events(
-        self, event_descriptions: list[str], top_k_per_event: int = 30
-    ) -> dict:
-        if not event_descriptions:
-            return {}
+    def align_events(self, events: list[str], top_k_per_event: int = 150, top_k_results: int = 1) -> list[dict]:
+        """
+        Giai đoạn 1: Truy xuất video chung cho chuỗi sự kiện.
+        Giai đoạn 2: Căn chỉnh (chọn khung hình) cho từng sự kiện trong video đó, đảm bảo tính tuần tự.
+        Trả về list chứa top K kết quả.
+        """
+        if not events:
+            return []
 
-        num_events = len(event_descriptions)
-        # 1. Truy xuất danh sách ứng viên cho từng event
-        event_candidates = []
-        for desc in event_descriptions:
-            cands = self.task1.find_event(query_description=desc, top_k=top_k_per_event)
-            event_candidates.append(cands)
+        # 1. Tìm kiếm độc lập cho từng event
+        event_search_results = []
+        for event in events:
+            hits = self.task1.find_event(query_description=event, top_k=top_k_per_event)
+            event_search_results.append(hits)
 
-        # 2. Nhóm các ứng viên theo video_id
-        # video_map[video_id][event_idx] = [list các hit_item]
-        video_map = {}
-        for ev_idx, cands in enumerate(event_candidates):
-            for item in cands:
-                v_id = item.get("video_id")
-                if not v_id:
+        # 2. Chấm điểm để chọn video tốt nhất (Giai đoạn 1 - Retrieval)
+        video_stats = defaultdict(lambda: {"match_count": 0, "total_score": 0.0, "events": defaultdict(list)})
+        
+        for event_idx, hits in enumerate(event_search_results):
+            seen_videos_in_this_event = set()
+            for hit in hits:
+                vid = hit["video_id"]
+                score = hit.get("score", 0.0)
+                frame_id = hit["frame_id"]
+                
+                if vid not in seen_videos_in_this_event:
+                    video_stats[vid]["match_count"] += 1
+                    seen_videos_in_this_event.add(vid)
+                
+                video_stats[vid]["total_score"] += score
+                video_stats[vid]["events"][event_idx].append((frame_id, score))
+
+        if not video_stats:
+            return [{"error": "Không tìm thấy video nào phù hợp với các sự kiện."}]
+
+        # Sắp xếp để lấy Top K video có điểm cao nhất
+        sorted_videos = sorted(
+            video_stats.keys(),
+            key=lambda v: (video_stats[v]["match_count"], video_stats[v]["total_score"]),
+            reverse=True
+        )
+        best_videos = sorted_videos[:top_k_results]
+
+        final_results = []
+
+        # 3. Chọn frame cho từng video lọt top (Giai đoạn 2 - Alignment)
+        for best_video in best_videos:
+            best_frames = []
+            current_min_frame = -1 
+            missing_flags = set()
+            
+            for event_idx in range(len(events)):
+                frames = video_stats[best_video]["events"].get(event_idx, [])
+                
+                if not frames:
+                    fallback_frame = current_min_frame + 1
+                    best_frames.append(fallback_frame)
+                    current_min_frame = fallback_frame
+                    missing_flags.add(event_idx)
                     continue
-                if v_id not in video_map:
-                    video_map[v_id] = {i: [] for i in range(num_events)}
-                video_map[v_id][ev_idx].append(item)
+                
+                frames.sort(key=lambda x: x[1], reverse=True)
+                
+                selected_frame = frames[0][0]
+                found_valid = False
+                for f_id, score in frames:
+                    if f_id > current_min_frame:
+                        selected_frame = f_id
+                        found_valid = True
+                        break
+                
+                if not found_valid:
+                    missing_flags.add(event_idx)
+                
+                best_frames.append(selected_frame)
+                current_min_frame = max(current_min_frame, selected_frame)
 
-        best_video_id = None
-        best_sequence = None
-        best_total_score = -1.0
+            # 4. Hậu xử lý: Sửa các frame có cờ thành trung bình cộng
+            interpolated_frames = list(best_frames)
+            for idx in sorted(list(missing_flags)):
+                prev_val = None
+                prev_idx = -1
+                for i in range(idx - 1, -1, -1):
+                    if i not in missing_flags:
+                        prev_val = best_frames[i]
+                        prev_idx = i
+                        break
+                
+                next_val = None
+                next_idx = -1
+                for i in range(idx + 1, len(best_frames)):
+                    if i not in missing_flags:
+                        next_val = best_frames[i]
+                        next_idx = i
+                        break
+                
+                if prev_val is not None and next_val is not None:
+                    step = (next_val - prev_val) / (next_idx - prev_idx)
+                    interpolated_frames[idx] = int(prev_val + step * (idx - prev_idx))
+                elif prev_val is not None:
+                    interpolated_frames[idx] = prev_val + 25
+                elif next_val is not None:
+                    interpolated_frames[idx] = max(0, next_val - 25)
 
-        # 3. Với mỗi video, dùng Dynamic Programming để tìm chuỗi frame tăng dần về mặt thời gian (f_0 < f_1 < ... < f_N-1)
-        for v_id, events_dict in video_map.items():
-            # Kiểm tra xem video này có đủ ứng viên cho tất cả các sự kiện hay không
-            if any(len(events_dict[ev_idx]) == 0 for ev_idx in range(num_events)):
-                continue
+            final_results.append({
+                "video_id": best_video,
+                "frame_ids": interpolated_frames,
+                "events": events
+            })
 
-            # Tìm chuỗi frame_id thỏa mãn f_0 < f_1 < ... < f_{N-1} có tổng điểm score lớn nhất
-            # dp[ev_idx][cand_idx] = (max_score, parent_cand_idx)
-            dp = []
-            for ev_idx in range(num_events):
-                items = sorted(events_dict[ev_idx], key=lambda x: int(x.get("frame_id", 0)))
-                events_dict[ev_idx] = items
-                dp.append([-1.0] * len(items))
-
-            # Khởi tạo cho event_idx = 0
-            for c_idx, item in enumerate(events_dict[0]):
-                dp[0][c_idx] = item.get("score", 0.0)
-
-            parent = [[-1] * len(events_dict[i]) for i in range(num_events)]
-
-            for ev_idx in range(1, num_events):
-                curr_items = events_dict[ev_idx]
-                prev_items = events_dict[ev_idx - 1]
-
-                for curr_c_idx, curr_item in enumerate(curr_items):
-                    curr_fid = int(curr_item.get("frame_id", 0))
-                    max_prev_score = -1.0
-                    best_prev_idx = -1
-
-                    for prev_c_idx, prev_item in enumerate(prev_items):
-                        prev_fid = int(prev_item.get("frame_id", 0))
-                        # Ràng buộc thời gian: frame_id của sự kiện sau phải lớn hơn sự kiện trước
-                        if prev_fid < curr_fid and dp[ev_idx - 1][prev_c_idx] > max_prev_score:
-                            max_prev_score = dp[ev_idx - 1][prev_c_idx]
-                            best_prev_idx = prev_c_idx
-
-                    if best_prev_idx != -1:
-                        dp[ev_idx][curr_c_idx] = max_prev_score + curr_item.get("score", 0.0)
-                        parent[ev_idx][curr_c_idx] = best_prev_idx
-
-            # Tìm điểm tổng lớn nhất ở event cuối cùng
-            last_ev_scores = dp[num_events - 1]
-            max_final_score = max(last_ev_scores) if last_ev_scores else -1.0
-
-            if max_final_score > best_total_score:
-                best_total_score = max_final_score
-                best_video_id = v_id
-
-                # Truy vết chuỗi frame
-                best_last_idx = last_ev_scores.index(max_final_score)
-                seq = [None] * num_events
-                curr_idx = best_last_idx
-
-                for ev_idx in range(num_events - 1, -1, -1):
-                    seq[ev_idx] = events_dict[ev_idx][curr_idx]
-                    curr_idx = parent[ev_idx][curr_idx]
-
-                best_sequence = seq
-
-        if not best_video_id or not best_sequence:
-            return {}
-
-        formatted_events = []
-        for ev_idx, hit in enumerate(best_sequence):
-            formatted_events.append(
-                {
-                    "event_index": ev_idx + 1,
-                    "description": event_descriptions[ev_idx],
-                    "frame_id": hit.get("frame_id"),
-                    "score": hit.get("score"),
-                    "image_path": hit.get("image_path"),
-                    "objects_path": hit.get("objects_path"),
-                    "object_classes": hit.get("object_classes", []),
-                }
-            )
-
-        return {
-            "video_id": best_video_id,
-            "total_score": round(best_total_score, 4),
-            "events": formatted_events,
-        }
+        return final_results
