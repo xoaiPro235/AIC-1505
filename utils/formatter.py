@@ -140,7 +140,7 @@ def format_trake_row(
 
 
 def export_kis_csv(
-    results: list[dict] | list[tuple] | list[list],
+    results: list[dict] | list[tuple] | list[list] | None,
     output_path: str | Path,
     max_rows: int = 100,
     frame_offset: int = 1,
@@ -155,7 +155,8 @@ def export_kis_csv(
     out_p.parent.mkdir(parents=True, exist_ok=True)
 
     rows = []
-    for item in results[:max_rows]:
+    items_list = results if results is not None else []
+    for item in items_list[:max_rows]:
         if isinstance(item, dict):
             v_id = item.get("video_id") or item.get("video_name") or item.get("video")
             f_id = item.get("frame_id") or item.get("frame_idx") or item.get("frame")
@@ -175,7 +176,7 @@ def export_kis_csv(
 
 
 def export_qa_csv(
-    results: list[dict] | list[tuple] | list[list],
+    results: list[dict] | list[tuple] | list[list] | None,
     output_path: str | Path,
     max_rows: int = 100,
     frame_offset: int = 1,
@@ -190,7 +191,8 @@ def export_qa_csv(
     out_p.parent.mkdir(parents=True, exist_ok=True)
 
     rows = []
-    for item in results[:max_rows]:
+    items_list = results if results is not None else []
+    for item in items_list[:max_rows]:
         if isinstance(item, dict):
             v_id = item.get("video_id") or item.get("video_name") or item.get("video")
             f_id = item.get("frame_id") or item.get("frame_idx") or item.get("frame")
@@ -212,7 +214,7 @@ def export_qa_csv(
 
 
 def export_trake_csv(
-    results: list[dict] | dict | list[tuple] | list[list],
+    results: list[dict] | dict | list[tuple] | list[list] | None,
     output_path: str | Path,
     expected_events_count: int | None = None,
     max_rows: int = 100,
@@ -228,7 +230,9 @@ def export_trake_csv(
     out_p.parent.mkdir(parents=True, exist_ok=True)
 
     # Chuẩn hóa results thành list
-    if isinstance(results, dict):
+    if results is None:
+        items_list = []
+    elif isinstance(results, dict):
         if "predictions" in results and isinstance(results["predictions"], list):
             items_list = results["predictions"]
         else:

@@ -73,9 +73,9 @@ if __name__ == "__main__":
     print("\n[2] Đang chạy Task 2: Hỏi - Đáp (Q&A)...")
     if task2:
         query_qa = "Một người đang dùng laptop trong văn phòng, laptop đó có màu gì?"
-        res_task2 = task2.qa_search(question=query_qa, top_k=20)
+        res_task2 = task2.qa_search(question=query_qa, top_k=3)
         export_qa_csv(res_task2, sub_dir / "query-2-qa.csv", max_rows=100)
-        print(f"-> Đã trả lời {len(res_task2)} kết quả và xuất vào {sub_dir}/query-2-qa.csv")
+        print(f"-> Đã trả lời {len(res_task2) if res_task2 else 0} kết quả và xuất vào {sub_dir}/query-2-qa.csv")
     else:
         print("-> [BỎ QUA] Chưa cấu hình GEMINI_API_KEY trong .env")
 
