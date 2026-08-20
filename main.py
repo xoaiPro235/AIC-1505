@@ -1,5 +1,3 @@
-import os
-from dotenv import load_dotenv
 import json
 
 from config import get_env
