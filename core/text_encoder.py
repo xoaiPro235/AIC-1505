@@ -6,7 +6,8 @@ class SigLIPEncoder:
     def __init__(
         self, model_name: str = "google/siglip2-so400m-patch14-384", device: str | None = None
     ):
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        # self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cpu"
         self.processor = AutoProcessor.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(self.device).eval()
 
@@ -24,5 +25,5 @@ class SigLIPEncoder:
                     features = features.text_embeds
                 else:
                     features = features[0]
-            features = features / features.norm(dim=-1, keepdim=True)
+            # features = features / features.norm(dim=-1, keepdim=True)
         return features.squeeze(0).cpu().tolist()

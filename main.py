@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import json
 
 from config import get_env
@@ -13,6 +15,7 @@ DB_HOST = get_env("QDRANT_HOST", "localhost")
 DB_PORT = int(get_env("QDRANT_PORT", "6333"))
 DB_API_KEY = get_env("QDRANT_API_KEY")
 DB_COLLECTION = get_env("QDRANT_COLLECTION", "aic2026_clip_v1")
+HF_TOKEN = get_env("HF_TOKEN")
 
 db_service = QdrantService(
     url=DB_URL,
@@ -42,38 +45,36 @@ else:
 # 5. Tạo instance cho Task 3 (TRAKE)
 task3 = Task3TRAKEService(task1_service=task1)
 
-
 if __name__ == "__main__":
-    # --- Kiểm thử Task 1: Textual KIS ---
+    # # --- Kiểm thử Task 1: Textual KIS ---
+    # print("\n==========================================")
+    # print("=== Dạng 1: Textual KIS ===")
+    # print("==========================================")
+    # res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=10)
+    # print(json.dumps(res_task1, indent=2, ensure_ascii=False))
+
+    # --- Kiểm thử Task 2: Q&A ---
     print("\n==========================================")
-    print("=== Dạng 1: Textual KIS ===")
+    print("=== Dạng 2: Hỏi - Đáp (Q&A) ===")
     print("==========================================")
-    res_task1 = task1.find_event("Một người đang mở laptop trong văn phòng", top_k=100)
-    print(json.dumps(res_task1, indent=2, ensure_ascii=False))
+    if task2:
+        res_task2 = task2.qa_search(
+            question="Một người đang dùng laptop trong văn phòng, laptop đó có màu gì?",
+            top_k=3,
+        )
+        print(json.dumps(res_task2, indent=2, ensure_ascii=False))
+    else:
+        print("[LƯU Ý] Chưa điền GEMINI_API_KEY trong .env. Hãy điền key để chạy Task 2 VLM.")
 
-    # # --- Kiểm thử Task 2: Q&A ---
-    # print("\n==========================================")
-    # print("=== Dạng 2: Hỏi - Đáp (Q&A) ===")
-    # print("==========================================")
-    # if task2:
-    #     res_task2 = task2.answer_question(
-    #         question="Chiếc laptop có logo gì?",
-    #     )
-    #     print(json.dumps(res_task2, indent=2, ensure_ascii=False))
-    # else:
-    #     print("[LƯU Ý] Chưa điền GEMINI_API_KEY trong .env. Hãy điền key để chạy Task 2 VLM.")
-
-    # # --- Kiểm thử Task 3: TRAKE ---
-    # print("\n==========================================")
-    # print("=== Dạng 3: TRAKE (Temporal Retrieval & Alignment) ===")
-    # print("==========================================")
-    # events_query = [
-    #     "Vận động viên bắt đầu chạy đà",
-    #     "Vận động viên giậm nhảy rời khỏi mặt đất",
-    #     "Vận động viên bay qua xà ngang",
-    #     "Vận động viên tiếp đất lên đệm",
-    # ]
-    # res_task3 = task3.align_events(events_query)
-    # print(json.dumps(res_task3, indent=2, ensure_ascii=False))
-
-
+    # --- Kiểm thử Task 3: TRAKE ---
+    print("\n==========================================")
+    print("=== Dạng 3: TRAKE (Temporal Retrieval & Alignment) ===")
+    print("==========================================")
+    events_query = [
+        "Vận động viên bắt đầu chạy đà",
+        "Vận động viên giậm nhảy rời khỏi mặt đất",
+        "Vận động viên bay qua xà ngang",
+        "Vận động viên tiếp đất lên đệm",
+    ]
+    res_task3 = task3.align_events(events_query, top_k_results=3)
+    print(json.dumps(res_task3, indent=2, ensure_ascii=False))
