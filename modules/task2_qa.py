@@ -1,5 +1,7 @@
+# @title
 import logging
 import os
+import json
 from io import BytesIO
 from pathlib import Path
 
@@ -9,7 +11,6 @@ from google.genai import errors, types
 from PIL import Image
 
 logger = logging.getLogger(__name__)
-
 
 class Task2QAService:
     def __init__(
@@ -28,102 +29,73 @@ class Task2QAService:
             )
         self.ai_client = genai.Client(api_key=api_key)
 
-    def _extract_visual_description(self, question: str) -> str:
-        """Dùng Gemini tách/biến câu hỏi thành mô tả thị giác (Visual Description) để query vector DB"""
-        prompt = (
-            "Dựa vào câu hỏi dưới đây, hãy tạo ra một câu mô tả ngắn gọn về khung cảnh/hình ảnh thị giác (visual description) "
-            "cần tìm trong video để có thể trả lời câu hỏi này.\n"
-            f"Câu hỏi: {question}\n"
-            "Chỉ trả về 1 câu mô tả ngắn gọn, không giải thích gì thêm."
-        )
-        response = self.ai_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[prompt],
-            config=types.GenerateContentConfig(temperature=0.2),
-        )
-        return response.text.strip()
+    def _parse_query(self, query: str) -> tuple[str, str]:
+        """Dùng Gemini phân tích query thành KIS query và QA question"""
+        prompt = f"""
+        Bạn là một trợ lý AI xử lý ngôn ngữ tự nhiên.
+        Nhiệm vụ của bạn là phân tích một câu truy vấn video thành 2 phần:
+        1. 'kis_query': Câu mô tả chi tiết, giàu thông tin để dùng làm từ khóa tìm kiếm khung hình (frame) trong video. Hãy sắp xếp lại hoặc bổ sung thêm ngữ cảnh nếu cần.
+        2. 'qa_question': Câu hỏi cụ thể cần trả lời dựa trên khung hình đó.
+
+        Đầu vào: "{query}"
+        """
+        try:
+            response = self.ai_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                    response_schema={
+                        "type": "OBJECT",
+                        "properties": {
+                            "kis_query": {"type": "STRING"},
+                            "qa_question": {"type": "STRING"}
+                        },
+                        "required": ["kis_query", "qa_question"]
+                    }
+                ),
+            )
+
+            parsed = json.loads((response.text or "").strip())
+            return parsed.get('kis_query', query), parsed.get('qa_question', query)
+        except Exception as e:
+            logger.warning(f"Lỗi khi parse query: {e}")
+            return query, query
 
     def _get_image(self, hit_item: dict) -> Image.Image | None:
         """
-        Lấy ảnh từ thư mục cục bộ dựa trên payload Qdrant:
-        - image_path: "/data/frames/L01_V001/0105.jpg"
-        - Hoặc ghép theo: videos/image/<sub_folder>/<video_id>/<frame_id>.jpg
+        Lấy ảnh từ thư mục cục bộ dựa trên payload Qdrant
         """
-        # 1. Kiểm tra image_path / frame_path từ payload Qdrant
         raw_path = hit_item.get("image_path") or hit_item.get("frame_path")
         if raw_path:
-            p = Path(raw_path)
-            if p.exists():
-                return Image.open(p)
-            # Thử ghép đường dẫn relative nếu raw_path có dạng /data/frames/...
-            clean_rel = str(raw_path).lstrip("/")
-            possible_rel_paths = [
-                Path(clean_rel),
-                self.videos_dir / clean_rel,
-                self.videos_dir / clean_rel.replace("data/frames/", "image/"),
-                self.videos_dir / clean_rel.replace("data/frames/", ""),
+            if raw_path.startswith("/"):
+                raw_path = raw_path[1:]
+
+            possible_paths = [
+                self.videos_dir / raw_path,
+                Path("/content/drive/MyDrive/AI_challenge/AIC-1505/data") / raw_path,
+                Path("/content/drive/MyDrive/AI_challenge/AIC-1505") / raw_path
             ]
-            for rel_p in possible_rel_paths:
-                if rel_p.exists():
-                    return Image.open(rel_p)
 
-        # 2. Xây dựng đường dẫn động từ video_id và frame_id
-        video_id = hit_item.get("video_id")
-        frame_id = hit_item.get("frame_id")
-
-        if video_id and frame_id is not None:
-            sub_folder = str(video_id).split("_")[0] if "_" in str(video_id) else str(video_id)
-            
-            # Thử các định dạng frame_id (ví dụ: 105 -> "0105.jpg" và "105.jpg")
-            frame_filenames = []
-            if isinstance(frame_id, int) or (isinstance(frame_id, str) and frame_id.isdigit()):
-                frame_filenames.append(f"{int(frame_id):04d}.jpg")
-                frame_filenames.append(f"{int(frame_id)}.jpg")
-            
-            frame_str = str(frame_id)
-            if not any(frame_str.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".JPG", ".PNG"]):
-                frame_filenames.append(f"{frame_str}.jpg")
-            else:
-                frame_filenames.append(frame_str)
-
-            for fname in frame_filenames:
-                possible_paths = [
-                    self.videos_dir / "image" / sub_folder / str(video_id) / fname,
-                    self.videos_dir / "image" / str(video_id) / fname,
-                    self.videos_dir / "data" / "frames" / str(video_id) / fname,
-                    self.videos_dir / sub_folder / str(video_id) / fname,
-                ]
-                for p in possible_paths:
-                    if p.exists():
-                        return Image.open(p)
-
-        # 3. Fallback: Nếu có frame_url
-        if hit_item.get("frame_url"):
-            try:
-                res = requests.get(hit_item["frame_url"], timeout=10)
-                if res.status_code == 200:
-                    return Image.open(BytesIO(res.content))
-            except (requests.RequestException, OSError) as exc:
-                logger.warning("Failed to fetch or open image from URL: %s", exc)
-
+            for p in possible_paths:
+                if p.exists():
+                    try:
+                        return Image.open(p).convert("RGB")
+                    except Exception as e:
+                        logger.warning(f"Không thể mở ảnh {p}: {e}")
         return None
 
-    def answer_question(
-        self, description: str | None = None, question: str | None = None, top_k: int = 1
-    ) -> list[dict]:
-        if not question and description:
-            # Trường hợp người dùng truyền 1 tham số duy nhất là câu hỏi vào vị trí description
-            question = description
-            description = None
-
+    def qa_search(self, question: str, top_k: int = 1) -> list[dict]:
         if not question:
             raise ValueError("Cần cung cấp ít nhất `question` để thực hiện Task 2.")
 
-        # Tự động biến câu hỏi thành câu miêu tả nếu chưa có description
-        search_description = description or self._extract_visual_description(question)
+        # 1. Phân tích câu hỏi thành kis_query và qa_question
+        kis_query, qa_question = self._parse_query(question)
+        logger.info(f"Parsed Query -> KIS: {kis_query} | QA: {qa_question}")
 
-        # 1. Gọi Task 1 để định vị frame liên quan nhất dựa vào search_description
-        candidates = self.task1.find_event(query_description=search_description, top_k=top_k)
+        # 2. Gọi Task 1 để định vị frame liên quan nhất dựa vào kis_query
+        candidates = self.task1.find_event(query_description=kis_query, top_k=top_k)
         if not candidates:
             return []
 
@@ -131,15 +103,16 @@ class Task2QAService:
         for cand in candidates:
             img = self._get_image(cand)
 
-            # 2. Gọi Gemini để trả lời câu hỏi dựa trên ảnh (hoặc bối cảnh payload nếu chưa có ảnh)
+            # 3. Gọi Gemini để trả lời câu hỏi dựa trên ảnh
             prompt = (
-                "Dựa vào hình ảnh được cung cấp từ video, hãy trả lời câu hỏi sau thật ngắn gọn:\n"
-                f"Câu hỏi: {question}"
+                "Dựa vào hình ảnh được cung cấp từ video, hãy trả lời câu hỏi sau một cách cực kỳ ngắn gọn và trực tiếp. "
+                "Đặc biệt nếu là câu hỏi đếm số lượng, CHỈ trả về con số (ví dụ: '5' hoặc 'năm'), tuyệt đối không trả lời thành câu.\n"
+                f"Câu hỏi: {qa_question}"
             )
 
             contents = []
             if img:
-                contents = [prompt, img]
+                contents = [img, prompt]
             else:
                 desc_context = cand.get("desc", "")
                 contents = [
@@ -153,18 +126,18 @@ class Task2QAService:
                     config=types.GenerateContentConfig(temperature=0.0),
                 )
                 answer_text = response.text.strip() if response and response.text else "Không có câu trả lời."
-            except (errors.APIError, Exception) as exc:  # noqa: BLE001
+            except (errors.APIError, Exception) as exc:
                 logger.warning("Gemini API call failed for frame %s: %s", cand.get("frame_id"), exc)
                 answer_text = "Không thể lấy câu trả lời từ Gemini API."
 
             results.append(
                 {
-                    "video_id": cand["video_id"],
-                    "frame_id": cand["frame_id"],
-                    "search_description": search_description,
+                    "video_id": cand.get("video_id"),
+                    "frame_id": cand.get("frame_id"),
+                    "kis_query": kis_query,
+                    "qa_question": qa_question,
                     "answer": answer_text,
                 }
             )
 
         return results
-
