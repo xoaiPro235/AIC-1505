@@ -7,6 +7,7 @@ from config import get_env
 from core.db_client import QdrantService
 from core.text_encoder import SigLIPEncoder
 from modules.object_extractor import ObjectClassExtractor
+from modules.query_rewriter import QueryRewriter
 from modules.task1_kis import Task1KISService
 from modules.task2_qa import Task2QAService
 from modules.task3_trake import Task3TRAKEService
@@ -36,6 +37,7 @@ class AICPipeline:
         filter_mode: str = "should",
         trake_candidate_videos: int = 10,
         qa_vision_top_k: int = 10,
+        rewrite_query: bool = False,
     ):
         db_url = get_env("QDRANT_URL")
         db_host = get_env("QDRANT_HOST", "localhost")
@@ -58,11 +60,16 @@ class AICPipeline:
         self.filter_mode = filter_mode
         self.trake_candidate_videos = trake_candidate_videos
         self.qa_vision_top_k = qa_vision_top_k
+        self.rewrite_query = rewrite_query
 
         gemini_key = get_env("GEMINI_API_KEY")
         gemini_text_model = get_env("GEMINI_TEXT_MODEL", "gemini-3.5-flash-lite")
         gemini_vision_model = get_env("GEMINI_VISION_MODEL", "gemini-2.5-flash")
         self.object_extractor = ObjectClassExtractor(
+            gemini_api_key=gemini_key,
+            text_model_name=gemini_text_model or "gemini-3.5-flash-lite",
+        )
+        self.query_rewriter = QueryRewriter(
             gemini_api_key=gemini_key,
             text_model_name=gemini_text_model or "gemini-3.5-flash-lite",
         )
@@ -73,6 +80,8 @@ class AICPipeline:
             object_extractor=self.object_extractor,
             enable_extract=extract_objects,
             filter_mode=filter_mode,
+            query_rewriter=self.query_rewriter,
+            rewrite_query=rewrite_query,
         )
 
         if gemini_key and gemini_key != "your_gemini_api_key_here":
@@ -106,7 +115,7 @@ class AICPipeline:
             results = self.task1.find_event(
                 query_description=desc,
                 top_k=top_k,
-                extract=self.extract_objects,
+                rewrite=self.rewrite_query,
             )
             export_kis_csv(results, output_csv_path, max_rows=top_k)
 
@@ -182,6 +191,7 @@ def main():
     parser.add_argument("--filter_mode", choices=["should", "must"], default="should", help="Object filter logic")
     parser.add_argument("--trake_candidate_videos", type=int, default=10, help="Candidate videos for TRAKE DP")
     parser.add_argument("--qa_vision_top_k", type=int, default=10, help="QA candidates sent to Gemini Vision")
+    parser.add_argument("--rewrite", action="store_true", help="Auto rewrite long/complex queries before SigLIP2 encoding")
     args = parser.parse_args()
 
     if args.validate_only:
@@ -194,6 +204,7 @@ def main():
         filter_mode=args.filter_mode,
         trake_candidate_videos=args.trake_candidate_videos,
         qa_vision_top_k=args.qa_vision_top_k,
+        rewrite_query=args.rewrite,
     )
     pipeline.run_batch(
         queries_dir=args.queries_dir,
