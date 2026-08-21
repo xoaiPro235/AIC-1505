@@ -352,17 +352,49 @@ def parse_query_file(query_file_path: str | Path) -> dict[str, Any]:
     elif q_type == "qa":
         result["qa_question"] = content
     elif q_type == "trake":
-        events = [line.strip() for line in content.splitlines() if line.strip()]
-        # Lọc bỏ số thứ tự đầu dòng nếu có dạng "1. Event..." hoặc "Event 1: ..."
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        event_pattern = re.compile(
+            r"^(?:E\s*\d+|Event\s*\d+|Sự\s*kiện\s*\d+|Su\s*kien\s*\d+)[\.\)\-:]\s*(.+)$",
+            flags=re.IGNORECASE,
+        )
+
+        context_lines = []
         clean_events = []
-        for ev in events:
-            ev_clean = re.sub(
-                r"^(\d+[\.\)\-:]|\bEvent\s*\d+[\.\)\-:]?)\s*",
-                "",
-                ev,
-                flags=re.IGNORECASE,
-            ).strip()
-            clean_events.append(ev_clean if ev_clean else ev)
+        saw_labeled_event = False
+
+        for line in lines:
+            match = event_pattern.match(line)
+            if match:
+                saw_labeled_event = True
+                event_text = match.group(1).strip()
+                if event_text:
+                    clean_events.append(event_text)
+                continue
+
+            if saw_labeled_event:
+                # Nếu event bị wrap xuống dòng tiếp theo, nối vào event gần nhất.
+                if clean_events:
+                    clean_events[-1] = f"{clean_events[-1]} {line}".strip()
+            else:
+                context_lines.append(line.rstrip(":"))
+
+        if not clean_events:
+            # Fallback cũ: mỗi dòng là một event, có lọc số thứ tự đầu dòng.
+            for ev in lines:
+                ev_clean = re.sub(
+                    r"^(\d+[\.\)\-:]|\bEvent\s*\d+[\.\)\-:]?)\s*",
+                    "",
+                    ev,
+                    flags=re.IGNORECASE,
+                ).strip()
+                clean_events.append(ev_clean if ev_clean else ev)
+
+        trake_context = " ".join(context_lines).strip()
+        if trake_context and clean_events:
+            context_prefix = trake_context.rstrip(".。")
+            clean_events = [f"{context_prefix}. {event}" for event in clean_events]
+
+        result["trake_context"] = trake_context
         result["trake_events"] = clean_events
 
     return result
